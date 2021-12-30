@@ -68,7 +68,7 @@ def plot_result(result, imgfp, class_names, outfp='out.jpg'):
     imwrite(img, outfp)
 
 
-def main():
+def ours():
     list_train_path = "/home/yanzuo/datasets/gather_split/v3/list_train.txt"
     list_query_path = "/home/yanzuo/datasets/gather_split/v3/list_query.txt"
     list_gallery_path = "/home/yanzuo/datasets/gather_split/v3/list_gallery.txt"
@@ -98,7 +98,6 @@ def main():
                 os.makedirs(save_dir)
             save_name = image_name.split('.')[0] + ".pkl"
             save_path = os.path.join(save_dir, save_name)
-
             if os.path.isfile(save_path):
                 continue
             
@@ -163,6 +162,50 @@ def test():
             save_path = os.path.join(save_dir, save_name)
             plot_result(bbox, image_path, class_names, save_path)
 
+def msmt17():
+    list_train_path = "datasets/MSMT17_V2/list_train.txt"
+    list_query_path = "datasets/MSMT17_V2/list_query.txt"
+    list_gallery_path = "datasets/MSMT17_V2/list_gallery.txt"
+
+    with open(list_train_path, "r") as f:
+        list_train = f.readlines()
+        list_train = [line.strip() for line in list_train]
+    with open(list_query_path, "r") as f:
+        list_query = f.readlines()
+        list_query = [line.strip() for line in list_query]
+    with open(list_gallery_path, "r") as f:
+        list_gallery = f.readlines()
+        list_gallery = [line.strip() for line in list_gallery]
+
+    args = parse_args()
+    cfg = Config.fromfile(args.config)
+    # imgname = args.imgname
+    class_names = cfg.class_names
+    engine, data_pipeline, device = prepare(cfg)
+
+    train_dir = "datasets/MSMT17_V2/mask_train_v2"
+    test_dir = "datasets/MSMT17_V2/mask_test_v2"
+    for i, lst in enumerate([list_train, list_query, list_gallery]):
+        for item in tqdm(lst):
+            image_path = os.path.join([train_dir, test_dir, test_dir][i], item.split(' ')[0])
+            image_dir, image_name = os.path.dirname(image_path), os.path.basename(image_path)
+            save_dir = image_dir.replace(["mask_train_v2", "mask_test_v2", "mask_test_v2"][i], "bbox_" + ["train", "test", "test"][i])
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            save_name = image_name.split('.')[0] + ".pkl"
+            save_path = os.path.join(save_dir, save_name)
+            if os.path.isfile(save_path):
+                continue
+            
+            data = data_pipeline(dict(img_info=dict(filename=image_path), img_prefix=None))
+            data = collate([data], samples_per_gpu=1)
+            data = scatter(data, [device])[0]
+            result = engine.infer(data["img"], data["img_metas"])[0]
+
+            with open(save_path, "wb") as f:
+                pickle.dump(result, f)
+
 if __name__ == '__main__':
     # main()
-    test()
+    # test()
+    msmt17()
