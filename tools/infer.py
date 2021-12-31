@@ -1,10 +1,12 @@
 import argparse
+import re
 import cv2
+import glob
 import numpy as np
 import os
 import pickle
-import torch
 import random
+import torch
 from tqdm import tqdm
 
 from vedacore.image import imread, imwrite
@@ -12,7 +14,6 @@ from vedacore.misc import Config, color_val, load_weights
 from vedacore.parallel import collate, scatter
 from vedadet.datasets.pipelines import Compose
 from vedadet.engines import build_engine
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Infer a detector')
@@ -67,48 +68,6 @@ def plot_result(result, imgfp, class_names, outfp='out.jpg'):
                     cv2.FONT_HERSHEY_COMPLEX, font_scale, text_color)
     imwrite(img, outfp)
 
-
-def ours():
-    list_train_path = "/home/yanzuo/datasets/gather_split/v3/list_train.txt"
-    list_query_path = "/home/yanzuo/datasets/gather_split/v3/list_query.txt"
-    list_gallery_path = "/home/yanzuo/datasets/gather_split/v3/list_gallery.txt"
-    
-    with open(list_train_path, "r") as f:
-        list_train = f.readlines()
-        list_train = [line.strip() for line in list_train]
-    with open(list_query_path, "r") as f:
-        list_query = f.readlines()
-        list_query = [line.strip() for line in list_query]
-    with open(list_gallery_path, "r") as f:
-        list_gallery = f.readlines()
-        list_gallery = [line.strip() for line in list_gallery]
-
-    args = parse_args()
-    cfg = Config.fromfile(args.config)
-    # imgname = args.imgname
-    class_names = cfg.class_names
-    engine, data_pipeline, device = prepare(cfg)
-
-    for i, lst in enumerate([list_train, list_query, list_gallery]):
-        for item in tqdm(lst):
-            image_path = ' '.join(item.split(' ')[2:])
-            image_dir, image_name = os.path.dirname(image_path), os.path.basename(image_path)
-            save_dir = image_dir.replace("xiaotong/ReID", "yanzuo").replace(["train", "test", "test"][i], "bbox_" + ["train", "test", "test"][i])
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            save_name = image_name.split('.')[0] + ".pkl"
-            save_path = os.path.join(save_dir, save_name)
-            if os.path.isfile(save_path):
-                continue
-            
-            data = data_pipeline(dict(img_info=dict(filename=image_path), img_prefix=None))
-            data = collate([data], samples_per_gpu=1)
-            data = scatter(data, [device])[0]
-            result = engine.infer(data["img"], data["img_metas"])[0]
-
-            with open(save_path, "wb") as f:
-                pickle.dump(result, f)
-
 def test():
     list_train_path = "/home/yanzuo/datasets/gather_split/v3/list_train.txt"
     list_query_path = "/home/yanzuo/datasets/gather_split/v3/list_query.txt"
@@ -162,6 +121,47 @@ def test():
             save_path = os.path.join(save_dir, save_name)
             plot_result(bbox, image_path, class_names, save_path)
 
+def ours():
+    list_train_path = "/home/yanzuo/datasets/gather_split/v3/list_train.txt"
+    list_query_path = "/home/yanzuo/datasets/gather_split/v3/list_query.txt"
+    list_gallery_path = "/home/yanzuo/datasets/gather_split/v3/list_gallery.txt"
+    
+    with open(list_train_path, "r") as f:
+        list_train = f.readlines()
+        list_train = [line.strip() for line in list_train]
+    with open(list_query_path, "r") as f:
+        list_query = f.readlines()
+        list_query = [line.strip() for line in list_query]
+    with open(list_gallery_path, "r") as f:
+        list_gallery = f.readlines()
+        list_gallery = [line.strip() for line in list_gallery]
+
+    args = parse_args()
+    cfg = Config.fromfile(args.config)
+    # imgname = args.imgname
+    class_names = cfg.class_names
+    engine, data_pipeline, device = prepare(cfg)
+
+    for i, lst in enumerate([list_train, list_query, list_gallery]):
+        for item in tqdm(lst):
+            image_path = ' '.join(item.split(' ')[2:])
+            image_dir, image_name = os.path.dirname(image_path), os.path.basename(image_path)
+            save_dir = image_dir.replace("xiaotong/ReID", "yanzuo").replace(["train", "test", "test"][i], "bbox_" + ["train", "test", "test"][i])
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            save_name = image_name.split('.')[0] + ".pkl"
+            save_path = os.path.join(save_dir, save_name)
+            if os.path.isfile(save_path):
+                continue
+            
+            data = data_pipeline(dict(img_info=dict(filename=image_path), img_prefix=None))
+            data = collate([data], samples_per_gpu=1)
+            data = scatter(data, [device])[0]
+            result = engine.infer(data["img"], data["img_metas"])[0]
+
+            with open(save_path, "wb") as f:
+                pickle.dump(result, f)
+
 def msmt17():
     list_train_path = "datasets/MSMT17_V2/list_train.txt"
     list_query_path = "datasets/MSMT17_V2/list_query.txt"
@@ -205,7 +205,81 @@ def msmt17():
             with open(save_path, "wb") as f:
                 pickle.dump(result, f)
 
+def dukemtmc():
+    root_dir = "datasets/DukeMTMC-reID"
+    train_dir = os.path.join(root_dir, "bounding_box_train")
+    query_dir = os.path.join(root_dir, "query")
+    gallery_dir = os.path.join(root_dir, "bounding_box_test")
+
+    list_train = glob.glob(os.path.join(train_dir, "*.jpg"))
+    list_query = glob.glob(os.path.join(query_dir, "*.jpg"))
+    list_gallery = glob.glob(os.path.join(gallery_dir, "*.jpg"))
+
+    args = parse_args()
+    cfg = Config.fromfile(args.config)
+    # imgname = args.imgname
+    class_names = cfg.class_names
+    engine, data_pipeline, device = prepare(cfg)
+
+    for i, lst in enumerate([list_train, list_query, list_gallery]):
+        for item in tqdm(lst, ncols=60):
+            image_path = item
+            image_dir, image_name = os.path.dirname(image_path), os.path.basename(image_path)
+            save_dir = image_dir.replace(["bounding_box_train", "query", "bounding_box_test"][i], "bbox_" + ["train", "test", "test"][i])
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            save_name = image_name.split('.')[0] + ".pkl"
+            save_path = os.path.join(save_dir, save_name)
+            if os.path.isfile(save_path):
+                continue
+            
+            data = data_pipeline(dict(img_info=dict(filename=image_path), img_prefix=None))
+            data = collate([data], samples_per_gpu=1)
+            data = scatter(data, [device])[0]
+            result = engine.infer(data["img"], data["img_metas"])[0]
+
+            with open(save_path, "wb") as f:
+                pickle.dump(result, f)
+
+def market1501():
+    root_dir = "datasets/Market-1501-v15.09.15"
+    train_dir = os.path.join(root_dir, "bounding_box_train")
+    query_dir = os.path.join(root_dir, "query")
+    gallery_dir = os.path.join(root_dir, "bounding_box_test")
+
+    list_train = glob.glob(os.path.join(train_dir, "*.jpg"))
+    list_query = glob.glob(os.path.join(query_dir, "*.jpg"))
+    list_gallery = glob.glob(os.path.join(gallery_dir, "*.jpg"))
+
+    args = parse_args()
+    cfg = Config.fromfile(args.config)
+    # imgname = args.imgname
+    class_names = cfg.class_names
+    engine, data_pipeline, device = prepare(cfg)
+
+    for i, lst in enumerate([list_train, list_query, list_gallery]):
+        for item in tqdm(lst, ncols=60):
+            image_path = item
+            image_dir, image_name = os.path.dirname(image_path), os.path.basename(image_path)
+            save_dir = image_dir.replace(["bounding_box_train", "query", "bounding_box_test"][i], "bbox_" + ["train", "test", "test"][i])
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            save_name = image_name.split('.')[0] + ".pkl"
+            save_path = os.path.join(save_dir, save_name)
+            if os.path.isfile(save_path):
+                continue
+            
+            data = data_pipeline(dict(img_info=dict(filename=image_path), img_prefix=None))
+            data = collate([data], samples_per_gpu=1)
+            data = scatter(data, [device])[0]
+            result = engine.infer(data["img"], data["img_metas"])[0]
+
+            with open(save_path, "wb") as f:
+                pickle.dump(result, f)
+
 if __name__ == '__main__':
-    # main()
     # test()
-    msmt17()
+    # main()
+    # msmt17()
+    # dukemtmc()
+    market1501()
